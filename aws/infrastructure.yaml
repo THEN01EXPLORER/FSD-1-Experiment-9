@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation Template for Full-Stack App with Load Balancing and Auto-Scaling'
+Description: 'CloudFormation Template for Full-Stack App - Totally Free Tier (Single Instance)'
 
 Parameters:
   VpcId:
@@ -7,121 +7,67 @@ Parameters:
     Description: VPC to deploy resources into
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
-    Description: Subnets for the Auto Scaling Group and Load Balancer
+    Description: Subnets for the EC2 Instance (Pick at least one)
   InstanceType:
     Type: String
     Default: t2.micro
-    AllowedValues:
-      - t2.micro
-      - t3.micro
-      - t2.small
-    Description: EC2 instance type
+    Description: EC2 instance type (t2.micro is Free Tier)
+  RepoUrl:
+    Type: String
+    Default: https://github.com/THEN01EXPLORER/FSD-1-Experiment-9.git
+    Description: URL of the GitHub repository to clone
 
 Resources:
-  # Security Group for the Load Balancer
-  LBSecurityGroup:
+  # Security Group for the EC2 instance
+  AppSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: Allow HTTP traffic to the Load Balancer
+      GroupDescription: Allow HTTP traffic (80) and SSH (22)
       VpcId: !Ref VpcId
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
-
-  # Application Load Balancer
-  AppLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      Subnets: !Ref Subnets
-      SecurityGroups:
-        - !Ref LBSecurityGroup
-
-  # Target Group
-  AppTargetGroup:
-    Type: AWS::ElasticLoadBalancingV2::TargetGroup
-    Properties:
-      VpcId: !Ref VpcId
-      Port: 80
-      Protocol: HTTP
-      HealthCheckPath: /api/health
-      HealthCheckIntervalSeconds: 30
-
-  # Listener
-  LBListener:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      LoadBalancerArn: !Ref AppLoadBalancer
-      Port: 80
-      Protocol: HTTP
-      DefaultActions:
-        - Type: forward
-          TargetGroupArn: !Ref AppTargetGroup
-
-  # Security Group for EC2 instances
-  InstanceSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Allow traffic from Load Balancer
-      VpcId: !Ref VpcId
-      SecurityGroupIngress:
         - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          SourceSecurityGroupId: !Ref LBSecurityGroup
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
 
-  # Launch Template for Auto Scaling
-  AppLaunchTemplate:
-    Type: AWS::EC2::LaunchTemplate
+  # Single EC2 Instance
+  AppInstance:
+    Type: AWS::EC2::Instance
     Properties:
-      LaunchTemplateData:
-        InstanceType: !Ref InstanceType
-        # AmiId would typically be determined dynamically via SSM parameter or mappings
-        ImageId: ami-0c55b159cbfafe1f0 # Example Amazon Linux 2 AMI
-        SecurityGroupIds:
-          - !Ref InstanceSecurityGroup
-        UserData:
-          # Shell script to install Docker, Docker-compose and run the app
-          Fn::Base64: |
-            #!/bin/bash
-            yum update -y
-            amazon-linux-extras install docker -y
-            service docker start
-            usermod -a -G docker ec2-user
-            curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-            chmod +x /usr/local/bin/docker-compose
-            # Project Setup
-            git clone https://github.com/THEN01EXPLORER/FSD-1-Experiment-9.git /app
-            cd /app
-            docker-compose up -d
-
-  # Auto Scaling Group
-  AppAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      VPCZoneIdentifier: !Ref Subnets
-      LaunchTemplate:
-        LaunchTemplateId: !Ref AppLaunchTemplate
-        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
-      MinSize: '2'
-      MaxSize: '5'
-      DesiredCapacity: '2'
-      TargetGroupARNs:
-        - !Ref AppTargetGroup
-
-  # Auto Scaling Policy
-  AppScalingPolicy:
-    Type: AWS::AutoScaling::ScalingPolicy
-    Properties:
-      AutoScalingGroupName: !Ref AppAutoScalingGroup
-      PolicyType: TargetTrackingScaling
-      TargetTrackingConfiguration:
-        PredefinedMetricSpecification:
-          PredefinedMetricType: ASGAverageCPUUtilization
-        TargetValue: 50.0
+      InstanceType: !Ref InstanceType
+      # Dynamically fetch the latest Amazon Linux 2023 AMI
+      ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      SubnetId: !Select [ 0, !Ref Subnets ]
+      SecurityGroupIds:
+        - !Ref AppSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update and Install Docker
+          dnf update -y
+          dnf install -y docker git
+          systemctl start docker
+          systemctl enable docker
+          usermod -a -G docker ec2-user
+          
+          # Install Docker Compose V2 (Standalone plugin)
+          mkdir -p /usr/local/lib/docker/cli-plugins/
+          curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+          
+          # Project Setup
+          git clone ${RepoUrl} /app
+          cd /app
+          docker compose up -d
 
 Outputs:
-  LoadBalancerDNS:
-    Description: URL of the Application Load Balancer
-    Value: !GetAtt AppLoadBalancer.DNSName
+  InstancePublicDNS:
+    Description: Public DNS of the EC2 instance
+    Value: !GetAtt AppInstance.PublicDnsName
+  AppURL:
+    Description: URL to access the application
+    Value: !Sub 'http://${AppInstance.PublicDnsName}'
