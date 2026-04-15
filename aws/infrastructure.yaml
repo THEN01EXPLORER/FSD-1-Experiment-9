@@ -91,10 +91,10 @@ Resources:
             usermod -a -G docker ec2-user
             curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
             chmod +x /usr/local/bin/docker-compose
-            # Mock pulling the github repository and running it
-            # git clone https://github.com/YourOrg/FSD-1-Experiment-9.git /app
-            # cd /app
-            # docker-compose up -d
+            # Project Setup
+            git clone https://github.com/THEN01EXPLORER/FSD-1-Experiment-9.git /app
+            cd /app
+            docker-compose up -d
 
   # Auto Scaling Group
   AppAutoScalingGroup:
