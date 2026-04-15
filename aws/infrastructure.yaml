@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'CloudFormation Template for Full-Stack App - Totally Free Tier (Single Instance)'
+Description: 'CloudFormation Template for Full-Stack App - Single EC2 Instance'
 
 Parameters:
   VpcId:
@@ -8,10 +8,6 @@ Parameters:
   Subnets:
     Type: List<AWS::EC2::Subnet::Id>
     Description: Subnets for the EC2 Instance (Pick at least one)
-  InstanceType:
-    Type: String
-    Default: t2.micro
-    Description: EC2 instance type (t2.micro is Free Tier)
   RepoUrl:
     Type: String
     Default: https://github.com/THEN01EXPLORER/FSD-1-Experiment-9.git
@@ -34,32 +30,29 @@ Resources:
           ToPort: 22
           CidrIp: 0.0.0.0/0
 
-  # Single EC2 Instance
+  # Single EC2 Instance - t2.micro hardcoded (Free Tier eligible)
   AppInstance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: !Ref InstanceType
-      # Dynamically fetch the latest Amazon Linux 2023 AMI
+      InstanceType: t2.micro
       ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
-      SubnetId: !Select [ 0, !Ref Subnets ]
-      SecurityGroupIds:
-        - !Ref AppSecurityGroup
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: 0
+          GroupSet:
+            - !Ref AppSecurityGroup
+          SubnetId: !Select [ 0, !Ref Subnets ]
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash
-          # Update and Install Docker
           dnf update -y
           dnf install -y docker git
           systemctl start docker
           systemctl enable docker
           usermod -a -G docker ec2-user
-          
-          # Install Docker Compose V2 (Standalone plugin)
           mkdir -p /usr/local/lib/docker/cli-plugins/
           curl -SL https://github.com/docker/compose/releases/download/v2.24.5/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
           chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-          
-          # Project Setup
           git clone ${RepoUrl} /app
           cd /app
           docker compose up -d
