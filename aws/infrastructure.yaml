@@ -30,11 +30,11 @@ Resources:
           ToPort: 22
           CidrIp: 0.0.0.0/0
 
-  # Single EC2 Instance - t2.micro hardcoded (Free Tier eligible)
+  # Single EC2 Instance - t3.micro (Free Tier eligible for this account)
   AppInstance:
     Type: AWS::EC2::Instance
     Properties:
-      InstanceType: t2.micro
+      InstanceType: t3.micro
       ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
       NetworkInterfaces:
         - AssociatePublicIpAddress: true
